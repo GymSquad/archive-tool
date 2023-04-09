@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id         String       @id
+  name       String       @unique
+  Department Department[]
+
+  @@index([name])
+}
+
+model Department {
+  id         String   @id
+  name       String
+  categoryId String
+  Category   Category @relation(fields: [categoryId], references: [id])
+  Office     Office[]
+
+  @@unique([name, categoryId])
+  @@index([name])
+}
+
+model Office {
+  id           String     @id
+  name         String
+  departmentId String
+  Department   Department @relation(fields: [departmentId], references: [id])
+  Website      Website[]
+
+  @@unique([name, departmentId])
+  @@index([name])
+}
+
+model Website {
+  id        String   @id
+  name      String
+  url       String
+  viewCount Int      @default(0)
+  updatedAt DateTime
+  officeId  String
+  isValid   Boolean
+  Office    Office   @relation(fields: [officeId], references: [id])
+}

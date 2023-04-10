@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut handles = Vec::new();
 
-    for mut website in websites.into_iter().take(10) {
+    for mut website in websites.into_iter() {
         let is_valid = check_is_valid(&website.url).await;
 
         if is_valid != website.is_valid {

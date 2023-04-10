@@ -1,23 +1,33 @@
 # Archive Tool
 
-A command line tool for validating and archiving records stored in the database
+A command line tool for validating and archiving records stored in the database (written in Rust)
 
 ## Usage
 
-Clone the repository
+### Using Docker
+
+### Build from Source
+
+Clone the Repository
 
 ```bash
-  git clone https://github.com/GymSquad/archive-tool.git
+git clone --branch rs https://github.com/GymSquad/archive-tool.git
 ```
 
-Install dependencies
+Change Your Current Directory
 
 ```bash
-  pnpm i
+cd archive-tool
 ```
 
-Run the script
+Build the Binary
 
 ```bash
-  pnpm run start
+cargo build --release && cp target/release/archive-tool .
+```
+
+Run the Program
+
+```bash
+./archive-tool <pywb collections path>
 ```

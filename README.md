@@ -15,7 +15,7 @@ docker pull alan910127/archive-tool
 Run the Application
 
 ```bash
-docker run -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" alan910127/archive-tool <pywb collections path>
+docker run -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" --add-host host.docker.internal:host-gateway alan910127/archive-tool <pywb collections path>
 ```
 
 > If the database is located at `localhost`, you should use `host.docker.internal` instead

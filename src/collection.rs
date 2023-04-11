@@ -34,18 +34,16 @@ pub async fn add_to_collection(
     collection_name: &str,
     warc_file: &str,
 ) -> anyhow::Result<()> {
-    let warc_file = format!("{}.warc.gz", warc_file);
-
     let archive_path = Path::new(pywb_collections_path)
         .join(collection_name)
         .join("archive")
-        .join(&warc_file);
+        .join(warc_file);
 
     if let Some(path) = archive_path.parent() {
         tokio::fs::create_dir_all(path).await?;
     }
 
-    tokio::fs::rename(&warc_file, &archive_path).await?;
+    tokio::fs::rename(warc_file, &archive_path).await?;
 
     Ok(())
 }

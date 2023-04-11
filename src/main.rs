@@ -4,20 +4,15 @@ mod archive;
 mod collection;
 mod db;
 
+const PYWB_COLLECTIONS_PATH: &str = "/data";
+
 #[tokio::main]
 async fn main() {
     simple_logger::SimpleLogger::new().init().unwrap();
 
-    let pywb_collections_path = match std::env::args().nth(1) {
-        Some(path) => path,
-        None => {
-            eprintln!(
-                "Usage: {} <pywb collections path>",
-                std::env::args().next().unwrap()
-            );
-            return;
-        }
-    };
+    let pywb_collections_path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| PYWB_COLLECTIONS_PATH.to_string());
     let pywb_collections_path = Arc::new(pywb_collections_path);
 
     dotenvy::dotenv().ok();
@@ -105,9 +100,12 @@ async fn archive_website(
 ) -> anyhow::Result<()> {
     let warc_file = archive::archive_url(&url).await?;
 
+    // The name of directory get by wget is the same as the name of the WARC file, remove it.
     tokio::fs::remove_dir_all(&warc_file).await?;
 
     collection::init_collection(&pywb_collections_path, &collection_name).await?;
+
+    let warc_file = format!("{}.warc.gz", warc_file);
     collection::add_to_collection(&pywb_collections_path, &collection_name, &warc_file).await?;
 
     Ok(())

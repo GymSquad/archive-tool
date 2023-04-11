@@ -15,10 +15,14 @@ docker pull alan910127/archive-tool
 Run the Application
 
 ```bash
-docker run -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" --add-host host.docker.internal:host-gateway alan910127/archive-tool <pywb collections path>
+docker run \
+    --add-host host.docker.internal:host-gateway \
+    -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" \
+    -v <pywb-collections-path>:/data \
+    alan910127/archive-tool
 ```
 
-> If the database is located at `localhost`, you should use `host.docker.internal` instead
+> If the database is located at `localhost`, you should use `host.docker.internal` with `--add-host host.docker.internal:host-gateway`.
 
 ### Build from Source
 
@@ -43,5 +47,5 @@ cargo build --release && cp target/release/archive-tool .
 Run the Program
 
 ```bash
-./archive-tool <pywb collections path>
+./archive-tool [pywb collections path]
 ```

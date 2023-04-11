@@ -17,11 +17,13 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
+    let pywb_collections_path = Arc::new(pywb_collections_path);
 
     let pool = db::create_connection_pool(&env::var("DATABASE_URL")?).await?;
     let pool = Arc::new(pool);
 
     let collection_name = collection::get_collection_name();
+    let collection_name = Arc::new(collection_name);
 
     let websites = match db::get_all_urls(&pool).await {
         Ok(urls) => urls,
@@ -76,8 +78,8 @@ async fn check_is_valid(url: &str) -> bool {
 }
 
 async fn archive_website(
-    pywb_collections_path: String,
-    collection_name: String,
+    pywb_collections_path: Arc<String>,
+    collection_name: Arc<String>,
     url: String,
 ) -> anyhow::Result<()> {
     println!("Archiving {}", url);

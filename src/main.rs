@@ -8,7 +8,11 @@ const PYWB_COLLECTIONS_PATH: &str = "/data";
 
 #[tokio::main]
 async fn main() {
-    simple_logger::SimpleLogger::new().init().unwrap();
+    simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .env()
+        .init()
+        .unwrap();
 
     let pywb_collections_path = std::env::args()
         .nth(1)

@@ -6,6 +6,20 @@ A command line tool for validating and archiving records stored in the database 
 
 ### Using Docker
 
+Pull the Docker Image from [Docker Hub](https://hub.docker.com/repository/docker/alan910127/archive-tool/general)
+
+```bash
+docker pull alan910127/archive-tool
+```
+
+Run the Application
+
+```bash
+docker run -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" alan910127/archive-tool <pywb collections path>
+```
+
+> If the database is located at `localhost`, you should use `host.docker.internal` instead
+
 ### Build from Source
 
 Clone the Repository

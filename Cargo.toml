@@ -9,7 +9,9 @@ edition = "2021"
 anyhow = "1.0.70"
 chrono = "0.4.24"
 dotenvy = "0.15.7"
+log = "0.4.17"
 reqwest = "0.11.16"
+simple_logger = "4.1.0"
 sqlx = { version = "0.6.3", features = ["runtime-tokio-rustls", "postgres"] }
 subprocess = "0.2.9"
 tokio = { version = "1.27.0", features = [

@@ -1,11 +1,13 @@
-use std::{env, sync::Arc, time::Duration};
+use std::{env, process, sync::Arc, time::Duration};
 
 mod archive;
 mod collection;
 mod db;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    simple_logger::SimpleLogger::new().init().unwrap();
+
     let pywb_collections_path = match std::env::args().nth(1) {
         Some(path) => path,
         None => {
@@ -13,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
                 "Usage: {} <pywb collections path>",
                 std::env::args().next().unwrap()
             );
-            return Ok(());
+            return;
         }
     };
     let pywb_collections_path = Arc::new(pywb_collections_path);
@@ -23,21 +25,28 @@ async fn main() -> anyhow::Result<()> {
     let database_url =
         env::var("DATABASE_URL").expect("Environment variable `DATABASE_URL` should be set");
 
-    let pool = db::create_connection_pool(&database_url)
-        .await
-        .expect("Unable to connect to database");
+    log::info!("Connecting to database...");
+    let pool = match db::create_connection_pool(&database_url).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            log::error!("Unable to connect to database: {}", e);
+            process::exit(1);
+        }
+    };
     let pool = Arc::new(pool);
 
     let collection_name = collection::get_collection_name();
     let collection_name = Arc::new(collection_name);
 
+    log::info!("Fetching URLs to archive...");
     let websites = match db::get_all_urls(&pool).await {
         Ok(urls) => urls,
         Err(e) => {
-            eprintln!("Unable get URLs to archive: {}", e);
-            return Err(e);
+            log::error!("Unable get URLs to archive: {}", e);
+            process::exit(1);
         }
     };
+    log::info!("Found {} URLs to check", websites.len());
 
     let mut handles = Vec::new();
 
@@ -48,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
             website.is_valid = is_valid;
 
             if let Err(e) = db::update_website(&pool, &website).await {
-                eprintln!("Unable to update website: {}", e);
+                log::warn!("Failed to update website in database: {}", e);
                 continue;
             }
         }
@@ -57,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
+        log::info!("Archiving {}", &website.url);
         handles.push(tokio::spawn(archive_website(
             pywb_collections_path.clone(),
             collection_name.clone(),
@@ -67,12 +77,10 @@ async fn main() -> anyhow::Result<()> {
     for handle in handles {
         match handle.await {
             Ok(Ok(_)) => {}
-            Ok(Err(e)) => eprintln!("Unable to archive website: {}", e),
-            Err(e) => eprintln!("Unable to archive website: {}", e),
+            Ok(Err(e)) => log::error!("Unable to archive website: {}", e),
+            Err(e) => log::error!("Unable to archive website: {}", e),
         };
     }
-
-    Ok(())
 }
 
 async fn check_is_valid(url: &str) -> bool {
@@ -84,7 +92,6 @@ async fn check_is_valid(url: &str) -> bool {
         Err(_) => return false,
     };
 
-    println!("Sending request to {}", url);
     match client.get(url).send().await {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
@@ -96,7 +103,6 @@ async fn archive_website(
     collection_name: Arc<String>,
     url: String,
 ) -> anyhow::Result<()> {
-    println!("Archiving {}", url);
     let warc_file = archive::archive_url(&url).await?;
 
     tokio::fs::remove_dir_all(&warc_file).await?;

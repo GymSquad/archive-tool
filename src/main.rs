@@ -6,7 +6,6 @@ mod db;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
     let pywb_collections_path = match std::env::args().nth(1) {
         Some(path) => path,
         None => {
@@ -19,7 +18,14 @@ async fn main() -> anyhow::Result<()> {
     };
     let pywb_collections_path = Arc::new(pywb_collections_path);
 
-    let pool = db::create_connection_pool(&env::var("DATABASE_URL")?).await?;
+    dotenvy::dotenv().ok();
+
+    let database_url =
+        env::var("DATABASE_URL").expect("Environment variable `DATABASE_URL` should be set");
+
+    let pool = db::create_connection_pool(&database_url)
+        .await
+        .expect("Unable to connect to database");
     let pool = Arc::new(pool);
 
     let collection_name = collection::get_collection_name();
@@ -40,7 +46,11 @@ async fn main() -> anyhow::Result<()> {
 
         if is_valid != website.is_valid {
             website.is_valid = is_valid;
-            db::update_website(&pool, &website).await?;
+
+            if let Err(e) = db::update_website(&pool, &website).await {
+                eprintln!("Unable to update website: {}", e);
+                continue;
+            }
         }
 
         if !is_valid {
@@ -55,7 +65,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     for handle in handles {
-        handle.await??;
+        match handle.await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => eprintln!("Unable to archive website: {}", e),
+            Err(e) => eprintln!("Unable to archive website: {}", e),
+        };
     }
 
     Ok(())

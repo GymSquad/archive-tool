@@ -1,9 +1,15 @@
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::io::{BufRead, BufReader};
 use url::Url;
 
 use subprocess::{Exec, Redirection};
 
 pub async fn archive_url(url: &str) -> anyhow::Result<String> {
+    lazy_static! {
+        static ref URL_REGEX: Regex = Regex::new("URL:[^ ]*").unwrap();
+    }
+
     let warc_file = Url::parse(url)?.host_str().unwrap_or("default").to_string();
 
     let out = Exec::cmd("wget")
@@ -28,7 +34,9 @@ pub async fn archive_url(url: &str) -> anyhow::Result<String> {
         match reader.read_line(&mut line) {
             Ok(0) => return Ok(warc_file),
             Ok(_) => {
-                print!("{}", line);
+                for cap in URL_REGEX.captures_iter(&line) {
+                    log::info!("Fetched {}", &cap[0]);
+                }
             }
             Err(e) => return Err(e.into()),
         }

@@ -1,5 +1,7 @@
 use std::{env, process, sync::Arc, time::Duration};
 
+use tokio::task::JoinSet;
+
 mod archive;
 mod collection;
 mod db;
@@ -14,10 +16,11 @@ async fn main() {
         .init()
         .unwrap();
 
-    let pywb_collections_path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| PYWB_COLLECTIONS_PATH.to_string());
-    let pywb_collections_path = Arc::new(pywb_collections_path);
+    let pywb_collections_path = Arc::new(
+        std::env::args()
+            .nth(1)
+            .unwrap_or_else(|| PYWB_COLLECTIONS_PATH.to_string()),
+    );
 
     dotenvy::dotenv().ok();
 
@@ -34,8 +37,7 @@ async fn main() {
     };
     let pool = Arc::new(pool);
 
-    let collection_name = collection::get_collection_name();
-    let collection_name = Arc::new(collection_name);
+    let collection_name = Arc::new(collection::get_collection_name());
 
     log::info!("Fetching URLs to archive...");
     let websites = match db::get_all_urls(&pool).await {
@@ -47,7 +49,7 @@ async fn main() {
     };
     log::info!("Found {} URLs to check", websites.len());
 
-    let mut handles = Vec::new();
+    let mut handles = JoinSet::new();
 
     for mut website in websites.into_iter() {
         let is_valid = check_is_valid(&website.url).await;
@@ -65,20 +67,21 @@ async fn main() {
             continue;
         }
 
+        let pywb_collections_path = pywb_collections_path.clone();
+        let collection_name = collection_name.clone();
         log::info!("Archiving {}", &website.url);
-        handles.push(tokio::spawn(archive_website(
-            pywb_collections_path.clone(),
-            collection_name.clone(),
+        handles.spawn(archive_website(
+            pywb_collections_path,
+            collection_name,
             website.url,
-        )));
+        ));
     }
 
-    for handle in handles {
-        match handle.await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => log::error!("Unable to archive website: {}", e),
-            Err(e) => log::error!("Unable to archive website: {}", e),
-        };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            log::info!("Received SIGINT, shutting down...");
+            handles.shutdown().await;
+        }
     }
 }
 

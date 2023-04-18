@@ -15,7 +15,7 @@ docker pull alan910127/archive-tool
 Run the Application
 
 ```bash
-docker run \
+docker run --rm -it \
     --add-host host.docker.internal:host-gateway \
     -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" \
     -v <pywb-collections-path>:/data \

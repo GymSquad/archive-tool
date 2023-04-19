@@ -53,6 +53,7 @@ async fn main() {
 
     for mut website in websites.into_iter() {
         let is_valid = check_is_valid(&website.url).await;
+        log::debug!("{} is valid: {}", &website.url, is_valid);
 
         if is_valid != website.is_valid {
             website.is_valid = is_valid;
@@ -70,19 +71,16 @@ async fn main() {
         let pywb_collections_path = pywb_collections_path.clone();
         let collection_name = collection_name.clone();
         log::info!("Archiving {}", &website.url);
-        handles.spawn(archive_website(
-            pywb_collections_path,
-            collection_name,
-            website.url,
-        ));
+        handles.spawn(async move {
+            match archive_website(pywb_collections_path, collection_name, &website.url).await {
+                Ok(_) => log::info!("Archived {}", &website.url),
+                Err(e) => log::warn!("Failed to archive {}: {}", &website.url, e),
+            }
+        });
     }
 
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {
-            log::info!("Received SIGINT, shutting down...");
-            handles.shutdown().await;
-        }
-    }
+    log::info!("Done, waiting for tasks to finish...");
+    while handles.join_next().await.is_some() {}
 }
 
 async fn check_is_valid(url: &str) -> bool {
@@ -103,9 +101,9 @@ async fn check_is_valid(url: &str) -> bool {
 async fn archive_website(
     pywb_collections_path: Arc<String>,
     collection_name: Arc<String>,
-    url: String,
+    url: &str,
 ) -> anyhow::Result<()> {
-    let warc_file = archive::archive_url(&url).await?;
+    let warc_file = archive::archive_url(url).await?;
 
     // The name of directory get by wget is the same as the name of the WARC file, remove it.
     tokio::fs::remove_dir_all(&warc_file).await?;

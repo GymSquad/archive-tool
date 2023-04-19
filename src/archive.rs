@@ -16,6 +16,8 @@ pub async fn archive_url(url: &str) -> anyhow::Result<String> {
         .args(&[
             "--reject-regex",
             "(.*)\\?(.*)",
+            "--accept",
+            "htm,html,css,js,jpg,jpeg,png,gif,bmp,ico,svg,webp,woff,woff2,ttf,otf,php",
             "--mirror",
             "--warc-file",
             &warc_file,

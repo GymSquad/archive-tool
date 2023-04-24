@@ -1,0 +1,8 @@
+*.mp4
+*.avi
+*.mkv
+*.flv
+*.wmv
+*.mp3
+*.ppt
+*.pdf

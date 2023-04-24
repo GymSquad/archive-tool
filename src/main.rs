@@ -1,117 +1,111 @@
-use std::{env, process, sync::Arc, time::Duration};
-
-use tokio::task::JoinSet;
-
 mod archive;
-mod collection;
 mod db;
+mod error;
+mod prelude;
 
-const PYWB_COLLECTIONS_PATH: &str = "/data";
+use archive::Archiver;
+use clap::Parser;
+use db::Database;
+use reqwest::Url;
+use std::{env, path::PathBuf, time::Duration};
+
+use crate::prelude::*;
+use tokio::{fs, select, signal};
+
+#[derive(Debug, Parser)]
+struct Args {
+    /// path to the file format blacklist configuration file
+    #[arg(short, long)]
+    blacklist: PathBuf,
+
+    /// path to the output directory
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// database URL
+    #[arg(short, long)]
+    database_url: Option<String>,
+
+    /// the number of URLs to archive
+    /// (useful for testing)
+    /// (default: no limit)
+    #[arg(short, long)]
+    num_url: Option<usize>,
+}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Info)
         .env()
         .init()
         .unwrap();
 
-    let pywb_collections_path = Arc::new(
-        std::env::args()
-            .nth(1)
-            .unwrap_or_else(|| PYWB_COLLECTIONS_PATH.to_string()),
-    );
+    let args = Args::parse();
 
     dotenvy::dotenv().ok();
 
-    let database_url =
-        env::var("DATABASE_URL").expect("Environment variable `DATABASE_URL` should be set");
+    let database_url = env::var("DATABASE_URL")?;
+    let database_url = args.database_url.unwrap_or(database_url);
+
+    let blacklist = fs::read_to_string(args.blacklist).await?;
+
+    let mut archiver = Archiver::new(blacklist.lines().map(String::from).collect(), args.output);
 
     log::info!("Connecting to database...");
-    let pool = match db::create_connection_pool(&database_url).await {
-        Ok(pool) => pool,
-        Err(e) => {
-            log::error!("Unable to connect to database: {}", e);
-            process::exit(1);
-        }
-    };
-    let pool = Arc::new(pool);
-
-    let collection_name = Arc::new(collection::get_collection_name());
+    let db = Database::connect(&database_url).await?;
 
     log::info!("Fetching URLs to archive...");
-    let websites = match db::get_all_urls(&pool).await {
-        Ok(urls) => urls,
-        Err(e) => {
-            log::error!("Unable get URLs to archive: {}", e);
-            process::exit(1);
-        }
-    };
-    log::info!("Found {} URLs to check", websites.len());
+    let websites = db.get_all_urls().await?;
+    let num_urls = websites.len();
+    log::info!("Found {} URLs to check", num_urls);
 
-    let mut handles = JoinSet::new();
-
-    for mut website in websites.into_iter() {
-        let is_valid = check_is_valid(&website.url).await;
-        log::debug!("{} is valid: {}", &website.url, is_valid);
-
-        if is_valid != website.is_valid {
-            website.is_valid = is_valid;
-
-            if let Err(e) = db::update_website(&pool, &website).await {
+    for website in websites.into_iter().take(args.num_url.unwrap_or(num_urls)) {
+        let Ok(redirected_url) = get_redirected_url(&website.url).await else {
+            log::debug!("{} is not valid", &website.url);
+            if let Err(e) = db.update_validity(&website, false).await {
                 log::warn!("Failed to update website in database: {}", e);
-                continue;
-            }
-        }
-
-        if !is_valid {
+            };
             continue;
+        };
+
+        if let Err(e) = db.update_validity(&website, true).await {
+            log::warn!("Failed to update website in database: {}", e);
+            continue;
+        };
+
+        if website.url == redirected_url.as_str() {
+            log::info!("{} is valid", &website.url);
+        } else {
+            log::info!("{} is valid (-> {})", &website.url, &redirected_url);
         }
 
-        let pywb_collections_path = pywb_collections_path.clone();
-        let collection_name = collection_name.clone();
-        log::info!("Archiving {}", &website.url);
-        handles.spawn(async move {
-            match archive_website(pywb_collections_path, collection_name, &website.url).await {
-                Ok(_) => log::info!("Archived {}", &website.url),
-                Err(e) => log::warn!("Failed to archive {}: {}", &website.url, e),
-            }
-        });
+        archiver.archive_url(website.id, redirected_url);
     }
 
-    log::info!("Done, waiting for tasks to finish...");
-    while handles.join_next().await.is_some() {}
-}
+    log::info!("All tasks spawned, waiting for them to finish...");
 
-async fn check_is_valid(url: &str) -> bool {
-    let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-    {
-        Ok(client) => client,
-        Err(_) => return false,
-    };
-
-    match client.get(url).send().await {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
+    select! {
+        _ = archiver.join_all() => {
+            log::info!("All tasks finished");
+        }
+        _ = signal::ctrl_c() => {
+            log::info!("Received SIGINT, exiting...");
+            archiver.kill_all().await;
+        }
     }
-}
-
-async fn archive_website(
-    pywb_collections_path: Arc<String>,
-    collection_name: Arc<String>,
-    url: &str,
-) -> anyhow::Result<()> {
-    let warc_file = archive::archive_url(url).await?;
-
-    // The name of directory get by wget is the same as the name of the WARC file, remove it.
-    tokio::fs::remove_dir_all(&warc_file).await?;
-
-    collection::init_collection(&pywb_collections_path, &collection_name).await?;
-
-    let warc_file = format!("{}.warc.gz", warc_file);
-    collection::add_to_collection(&pywb_collections_path, &collection_name, &warc_file).await?;
 
     Ok(())
+}
+
+async fn get_redirected_url(url: &str) -> Result<Url> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+
+    let response = client.get(url).send().await?;
+    match response.status() {
+        status if status.is_success() || status.is_redirection() => Ok(response.url().clone()),
+        status => Err(Error::DeadUrl(status.to_string())),
+    }
 }

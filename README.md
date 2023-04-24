@@ -1,23 +1,51 @@
 # Archive Tool
 
-A command line tool for validating and archiving records stored in the database
+A command line tool for validating and archiving records stored in the database (written in Rust)
 
 ## Usage
 
-Clone the repository
+### Using Docker
+
+Pull the Docker Image from [Docker Hub](https://hub.docker.com/repository/docker/alan910127/archive-tool/general)
 
 ```bash
-  git clone https://github.com/GymSquad/archive-tool.git
+docker pull alan910127/archive-tool
 ```
 
-Install dependencies
+Run the Application
 
 ```bash
-  pnpm i
+docker run --rm -it \
+    --add-host host.docker.internal:host-gateway \
+    -e DATABASE_URL="postgresql://app:app@host.docker.internal:5432/db" \
+    -v <pywb-collections-path>:/data \
+    alan910127/archive-tool
 ```
 
-Run the script
+> If the database is located at `localhost`, you should use `host.docker.internal` with `--add-host host.docker.internal:host-gateway`.
+
+### Build from Source
+
+Clone the Repository
 
 ```bash
-  pnpm run start
+git clone --branch rs https://github.com/GymSquad/archive-tool.git
+```
+
+Change Your Current Directory
+
+```bash
+cd archive-tool
+```
+
+Build the Binary
+
+```bash
+cargo build --release && cp target/release/archive-tool .
+```
+
+Run the Program
+
+```bash
+./archive-tool [pywb collections path]
 ```

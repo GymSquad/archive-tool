@@ -19,7 +19,7 @@ COPY --from=cacher /app/target target
 COPY --from=cacher ${CARGO_HOME} ${CARGO_HOME}
 RUN cargo build --release
 
-FROM debian:buster-slim
-RUN apt-get update && apt install -y openssl wget
+FROM alan910127/wget2:latest
+WORKDIR /app
 COPY --from=builder /app/target/release/archive-tool /
-CMD [ "/archive-tool" ]
+ENTRYPOINT [ "/archive-tool" ]

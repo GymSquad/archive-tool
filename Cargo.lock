@@ -86,6 +86,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "log",
+ "num_cpus",
  "reqwest",
  "simple_logger",
  "sqlx",

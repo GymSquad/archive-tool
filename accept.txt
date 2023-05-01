@@ -1,0 +1,17 @@
+htm
+html
+css
+js
+jpg
+jpeg
+png
+gif
+bmp
+svg
+webp
+woff
+woff2
+ttf
+otf
+php
+aspx

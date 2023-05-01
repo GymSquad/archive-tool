@@ -14,43 +14,76 @@ use tokio::{fs, select, signal};
 
 #[derive(Debug, Parser)]
 struct Args {
-    /// path to the file format blacklist configuration file
+    /// path to the accepted file format configuration file
     #[arg(short, long)]
-    blacklist: PathBuf,
+    accept_formats: PathBuf,
 
     /// path to the output directory
     #[arg(short, long)]
     output: PathBuf,
 
-    /// database URL
+    /// database URL (priority over DATABASE_URL env var)
     #[arg(short, long)]
     database_url: Option<String>,
 
-    /// the number of URLs to archive
-    /// (useful for testing)
+    /// the number of URLs to archive, useful for testing
     /// (default: no limit)
     #[arg(short, long)]
     num_url: Option<usize>,
+
+    /// the maxmimum number of concurrent tasks
+    /// (default: 4)
+    #[arg(short, long)]
+    tasks: Option<usize>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Info)
         .env()
         .init()
         .unwrap();
 
-    let args = Args::parse();
-
     dotenvy::dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL")?;
-    let database_url = args.database_url.unwrap_or(database_url);
+    let args = Args::parse();
+    let cpus = num_cpus::get();
+    log::info!("Detected {} CPUs", cpus);
 
-    let blacklist = fs::read_to_string(args.blacklist).await?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(std::cmp::min(args.tasks.unwrap_or(4), cpus))
+        .enable_all()
+        .build()
+        .unwrap();
 
-    let mut archiver = Archiver::new(blacklist.lines().map(String::from).collect(), args.output);
+    runtime.block_on(async {
+        if let Err(e) = archive_tool(args).await {
+            log::error!("{}", e);
+        }
+    });
+}
+
+async fn archive_tool(args: Args) -> Result<()> {
+    let database_url = env::var("DATABASE_URL").ok();
+    let database_url = args.database_url.unwrap_or_else(|| {
+        database_url.expect("DATABASE_URL env var or --database-url argument must be provided")
+    });
+
+    let accpet_formats = fs::read_to_string(args.accept_formats).await?;
+
+    let mut archiver = Archiver::new(
+        accpet_formats
+            .lines()
+            .filter_map(|s| {
+                if !s.is_empty() {
+                    Some(s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        args.output,
+    );
 
     log::info!("Connecting to database...");
     let db = Database::connect(&database_url).await?;

@@ -18,7 +18,8 @@ jobs:
       pkg-version: ${{ steps.pkg-version.outputs.PKG_VERSION }}
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout sources
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -35,14 +36,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout sources
+        uses: actions/checkout@v3
 
       - name: Create release
         uses: taiki-e/create-gh-release-action@v1
         with:
           # changelog: CHANGELOG.md
           branch: main
-          ref: refs/tag/v${{ needs.get-tag.outputs.pkg-version }}
+          ref: refs/tags/v${{ needs.get-tag.outputs.pkg-version }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
@@ -61,7 +63,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout sources
+        uses: actions/checkout@v3
 
       - name: Upload binaries
         uses: taiki-e/upload-rust-binary-action@v1
@@ -81,7 +84,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout sources
+        uses: actions/checkout@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2

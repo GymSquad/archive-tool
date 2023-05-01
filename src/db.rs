@@ -26,7 +26,7 @@ impl Database {
     }
 
     pub async fn get_all_urls(&self) -> Result<Vec<Website>> {
-        sqlx::query_as::<_, Website>(r#"SELECT id, url, "isValid" as is_valid FROM "Website""#)
+        sqlx::query_as::<_, Website>(r#"SELECT "id", "url", "isValid" as is_valid FROM "Website""#)
             .fetch_all(&self.pool)
             .await
             .map_err(Into::into)

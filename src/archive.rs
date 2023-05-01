@@ -1,44 +1,46 @@
 use crate::prelude::*;
-use std::{path::PathBuf, sync::Arc};
+use std::{fs, io::Read, path::PathBuf, sync::Arc};
 
 use chrono::{Datelike, Local};
 use reqwest::Url;
-use subprocess::{Exec, Popen};
+use subprocess::{Popen, PopenConfig};
 use tokio::task::JoinSet;
 
 #[derive(Debug)]
 pub struct Archiver {
-    blacklist: Arc<Vec<String>>,
+    accept_formats: Arc<String>,
     output_path: PathBuf,
     handles: JoinSet<()>,
 }
 
+fn get_today_string() -> String {
+    let now = Local::now();
+    format!(
+        "{}-{:0width$}-{:0width$}",
+        now.year(),
+        now.month(),
+        now.day(),
+        width = 2
+    )
+}
+
 impl Archiver {
-    pub fn new(mut blacklist: Vec<String>, mut output_path: PathBuf) -> Self {
-        blacklist.iter_mut().for_each(|s| s.insert(0, '-'));
-
-        let now = Local::now();
-        output_path.push(format!(
-            "{}-{:0width$}-{:0width$}",
-            now.year(),
-            now.month(),
-            now.day(),
-            width = 2
-        ));
-
+    pub fn new(accept_formats: Vec<String>, output_path: PathBuf) -> Self {
         Self {
-            blacklist: Arc::new(blacklist),
+            accept_formats: Arc::new(accept_formats.join(",")),
             output_path,
             handles: JoinSet::new(),
         }
     }
 
     pub fn archive_url(&mut self, website_id: String, url: Url) {
-        let blacklist = self.blacklist.clone();
-        let output_path = self.output_path.join(website_id);
+        let accept_formats = self.accept_formats.clone();
 
+        let output_path = self.output_path.join(website_id).join(get_today_string());
+
+        log::info!("Archiving {}...", &url);
         self.handles.spawn(async move {
-            if let Err(e) = archive_runner(url.clone(), blacklist, output_path) {
+            if let Err(e) = archive_runner(url.clone(), accept_formats, output_path) {
                 log::error!("Failed to archive {}: {}", url, e);
             }
         });
@@ -53,28 +55,63 @@ impl Archiver {
     }
 }
 
-fn archive_runner(url: Url, blacklist: Arc<Vec<String>>, output_path: PathBuf) -> Result<Popen> {
-    let output_path = output_path.join(url.domain().unwrap());
-    let output_path = output_path.as_path().to_str().unwrap();
+macro_rules! success_return {
+    ($domain:expr, $output_path:expr) => {
+        log::info!("Successfully archived {} to {}", $domain, $output_path);
+        fs::create_dir_all($output_path)?;
+        fs::rename($domain, $output_path)?;
+        return Ok(());
+    };
+}
 
-    let mut args = vec![
+fn archive_runner(url: Url, accept_formats: Arc<String>, output_path: PathBuf) -> Result<()> {
+    let domain = url.domain().ok_or(Error::Archive("Invalid URL".into()))?;
+    let output_path = output_path
+        .as_path()
+        .to_str()
+        .ok_or(Error::Archive("Invalid output path".into()))?;
+
+    let cmd = [
+        "wget2",
+        "--accept",
+        accept_formats.as_str(),
+        "--recursive",
+        "--level=5",
+        "--no-parent",
+        "--user-agent=Mozilla/5.0",
+        "--convert-links",
+        "--adjust-extension",
         url.as_str(),
-        "-O",
-        output_path,
-        "--mirror",
-        "--max-size",
-        "536870912", // 512 * 1024 * 1024 = 512 MB
-        "--robots",
-        "0",
-        "--user-agent",
-        "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0",
     ];
-    args.extend(blacklist.iter().map(String::as_str));
 
-    let process = Exec::cmd("httrack")
-        .args(&args)
-        .popen()
-        .map_err(|e| Error::Archive(e.to_string()))?;
+    let mut process = Popen::create(
+        &cmd,
+        PopenConfig {
+            stdout: subprocess::Redirection::Pipe,
+            ..Default::default()
+        },
+    )
+    .map_err(|_| Error::Archive("Failed to launch wget2".into()))?;
 
-    Ok(process)
+    let mut process_out = process
+        .stdout
+        .take()
+        .ok_or(Error::Archive("Failed to get stdout".into()))?;
+
+    let mut buffer = [0; 1024];
+    loop {
+        if process.poll().is_some() {
+            success_return!(domain, output_path);
+        }
+
+        if let Err(e) = process_out.read(&mut buffer) {
+            if e.kind() == std::io::ErrorKind::BrokenPipe {
+                success_return!(domain, output_path);
+            } else {
+                return Err(e.into());
+            }
+        }
+
+        log::trace!("{}", String::from_utf8_lossy(&buffer));
+    }
 }

@@ -16,6 +16,8 @@ Options:
           database URL (priority over DATABASE_URL env var)
   -n, --num-url <NUM_URL>
           the number of URLs to archive, useful for testing (default: no limit)
+  -m, --max-level <MAX_LEVEL>
+          the maximum level of redirections to follow
   -t, --tasks <TASKS>
           the maxmimum number of concurrent tasks (default: 4)
   -h, --help

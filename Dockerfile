@@ -1,25 +1,20 @@
-ARG BASE_IMAGE=rust:1.68
-
-FROM ${BASE_IMAGE} as planner
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
 WORKDIR /app
-RUN cargo install cargo-chef --version 0.1.56 --locked
+
+FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM ${BASE_IMAGE} as cacher
-WORKDIR /app
-RUN cargo install cargo-chef --version 0.1.56 --locked
+FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies
 RUN cargo chef cook --release --recipe-path recipe.json
-
-FROM ${BASE_IMAGE} as builder
-WORKDIR /app
+# Build application
 COPY . .
-COPY --from=cacher /app/target target
-COPY --from=cacher ${CARGO_HOME} ${CARGO_HOME}
 RUN cargo build --release
 
-FROM alan910127/wget2:latest
+FROM debian:buster-slim AS runtime
 WORKDIR /app
-COPY --from=builder /app/target/release/archive-tool /
-ENTRYPOINT [ "/archive-tool" ]
+RUN apt-get update && apt-get install -y libssl-dev wget
+COPY --from=builder /app/target/release/archive-tool /usr/local/bin
+ENTRYPOINT [ "/usr/local/bin/archive-tool" ]

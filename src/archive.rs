@@ -11,7 +11,6 @@ pub struct Archiver {
     accept_formats: Arc<String>,
     output_path: PathBuf,
     handles: JoinSet<()>,
-    max_level: Arc<String>,
 }
 
 fn get_today_string() -> String {
@@ -26,19 +25,11 @@ fn get_today_string() -> String {
 }
 
 impl Archiver {
-    pub fn new(
-        accept_formats: Vec<String>,
-        output_path: PathBuf,
-        max_level: Option<usize>,
-    ) -> Self {
-        let max_level = max_level
-            .map(|level| level.to_string())
-            .unwrap_or("inf".into());
+    pub fn new(accept_formats: Vec<String>, output_path: PathBuf) -> Self {
         Self {
             accept_formats: Arc::new(accept_formats.join(",")),
             output_path,
             handles: JoinSet::new(),
-            max_level: Arc::new(max_level),
         }
     }
 
@@ -46,11 +37,10 @@ impl Archiver {
         let accept_formats = self.accept_formats.clone();
 
         let output_path = self.output_path.join(website_id).join(get_today_string());
-        let max_level = self.max_level.clone();
 
         log::info!("Archiving {}...", &url);
         self.handles.spawn(async move {
-            if let Err(e) = archive_runner(url.clone(), accept_formats, output_path, max_level) {
+            if let Err(e) = archive_runner(url.clone(), accept_formats, output_path) {
                 log::error!("Failed to archive {}: {}", url, e);
             }
         });
@@ -74,12 +64,7 @@ macro_rules! success_return {
     };
 }
 
-fn archive_runner(
-    url: Url,
-    accept_formats: Arc<String>,
-    output_path: PathBuf,
-    max_level: Arc<String>,
-) -> Result<()> {
+fn archive_runner(url: Url, accept_formats: Arc<String>, output_path: PathBuf) -> Result<()> {
     let domain = url.domain().ok_or(Error::Archive("Invalid URL".into()))?;
     let output_path = output_path
         .as_path()
@@ -90,9 +75,9 @@ fn archive_runner(
         "wget",
         "--accept",
         accept_formats.as_str(),
-        "--recursive",
-        "--level",
-        &max_level,
+        "--mirror",
+        "--tries",
+        "2",
         "--no-parent",
         "--user-agent=Mozilla/5.0",
         "--convert-links",

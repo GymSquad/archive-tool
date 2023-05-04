@@ -31,10 +31,6 @@ struct Args {
     #[arg(short, long)]
     num_url: Option<usize>,
 
-    /// the maximum level of redirections to follow
-    #[arg(short, long)]
-    max_level: Option<usize>,
-
     /// the maxmimum number of concurrent tasks
     /// (default: 4)
     #[arg(short, long)]
@@ -87,7 +83,6 @@ async fn archive_tool(args: Args) -> Result<()> {
             })
             .collect(),
         args.output,
-        args.max_level,
     );
 
     log::info!("Connecting to database...");
